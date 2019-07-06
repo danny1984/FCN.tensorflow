@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 from __future__ import print_function
 import tensorflow as tf
 import numpy as np
@@ -7,6 +8,8 @@ import read_MITSceneParsingData as scene_parsing
 import datetime
 import BatchDatsetReader as dataset
 from six.moves import xrange
+import scipy.misc as misc
+import time;
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("batch_size", "2", "batch size for training")
@@ -14,7 +17,7 @@ tf.flags.DEFINE_string("logs_dir", "logs/", "path to logs directory")
 tf.flags.DEFINE_string("data_dir", "Data_zoo/MIT_SceneParsing/", "path to dataset")
 tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer")
 tf.flags.DEFINE_string("model_dir", "Model_zoo/", "Path to vgg model mat")
-tf.flags.DEFINE_bool('debug', "False", "Debug mode: True/ False")
+tf.flags.DEFINE_bool('debug', "True", "Debug mode: True/ False")
 tf.flags.DEFINE_string('mode', "train", "Mode train/ test/ visualize")
 
 MODEL_URL = 'http://www.vlfeat.org/matconvnet/models/beta16/imagenet-vgg-verydeep-19.mat'
@@ -56,12 +59,16 @@ def vgg_net(weights, image):
             if FLAGS.debug:
                 utils.add_activation_summary(current)
         elif kind == 'pool':
+            # 使用平均池化，步长为2，每次缩小一倍
+            # 输入224 -> 112 -> 56 -> 28 -> 14
             current = utils.avg_pool_2x2(current)
         net[name] = current
 
+    # 保存VGG每层输出的结果
     return net
 
 
+## 预测函数: image 输入图像向量，keep_prob dropout rate
 def inference(image, keep_prob):
     """
     Semantic segmentation network definition
@@ -77,55 +84,74 @@ def inference(image, keep_prob):
 
     weights = np.squeeze(model_data['layers'])
 
+    # 将图像向量减去平均像素，进行normalization
     processed_image = utils.process_image(image, mean_pixel)
 
     with tf.variable_scope("inference"):
         image_net = vgg_net(weights, processed_image)
         conv_final_layer = image_net["conv5_3"]
 
+        # VGG 前五层
+        # 最大池化，缩小一倍
+        # 在VGG中已经 224 -> 112 -> 56 -> 28 -> 14， pool5 为 7
         pool5 = utils.max_pool_2x2(conv_final_layer)
 
+        # 第六层
         W6 = utils.weight_variable([7, 7, 512, 4096], name="W6")
         b6 = utils.bias_variable([4096], name="b6")
-        conv6 = utils.conv2d_basic(pool5, W6, b6)
+        conv6 = utils.conv2d_basic(pool5, W6, b6)               # 1*1*4096
         relu6 = tf.nn.relu(conv6, name="relu6")
         if FLAGS.debug:
             utils.add_activation_summary(relu6)
         relu_dropout6 = tf.nn.dropout(relu6, keep_prob=keep_prob)
 
+        # 第七层
         W7 = utils.weight_variable([1, 1, 4096, 4096], name="W7")
         b7 = utils.bias_variable([4096], name="b7")
-        conv7 = utils.conv2d_basic(relu_dropout6, W7, b7)
+        conv7 = utils.conv2d_basic(relu_dropout6, W7, b7)       # 1*1*4096
         relu7 = tf.nn.relu(conv7, name="relu7")
         if FLAGS.debug:
             utils.add_activation_summary(relu7)
         relu_dropout7 = tf.nn.dropout(relu7, keep_prob=keep_prob)
 
+        # 第八层
         W8 = utils.weight_variable([1, 1, 4096, NUM_OF_CLASSESS], name="W8")
         b8 = utils.bias_variable([NUM_OF_CLASSESS], name="b8")
-        conv8 = utils.conv2d_basic(relu_dropout7, W8, b8)
+        conv8 = utils.conv2d_basic(relu_dropout7, W8, b8)       # 1*1*NUM_OF_CLASSESS
         # annotation_pred1 = tf.argmax(conv8, dimension=3, name="prediction1")
 
+        print("conv8:", np.shape(conv8)) #(?, 7, 7, 151)
+
         # now to upscale to actual image size
-        deconv_shape1 = image_net["pool4"].get_shape()
+        # t1 反卷积，提升图像size
+        deconv_shape1 = image_net["pool4"].get_shape() # batch_size * 14 * 14 * 512 原图1/16结果
         W_t1 = utils.weight_variable([4, 4, deconv_shape1[3].value, NUM_OF_CLASSESS], name="W_t1")
         b_t1 = utils.bias_variable([deconv_shape1[3].value], name="b_t1")
+        # 反卷积
+        # W_t1: 4*4*512*num_class, 其中num_class 是输入通道，512 是pool4 channel
+        # b_t1: 512
+        # output_shape = batch_size * 14 * 14 * 512
         conv_t1 = utils.conv2d_transpose_strided(conv8, W_t1, b_t1, output_shape=tf.shape(image_net["pool4"]))
-        fuse_1 = tf.add(conv_t1, image_net["pool4"], name="fuse_1")
+        fuse_1 = tf.add(conv_t1, image_net["pool4"], name="fuse_1") # 将pool4 和 conv_t1 拼接
+        print("pool4 and de_conv8 ==> fuse1:", np.shape(fuse_1))  # (?, 14, 14, 512)
 
+        # t2 反卷积
+        # W_t2: 4 * 4 * pool3_channel * pool4_channel
         deconv_shape2 = image_net["pool3"].get_shape()
         W_t2 = utils.weight_variable([4, 4, deconv_shape2[3].value, deconv_shape1[3].value], name="W_t2")
         b_t2 = utils.bias_variable([deconv_shape2[3].value], name="b_t2")
         conv_t2 = utils.conv2d_transpose_strided(fuse_1, W_t2, b_t2, output_shape=tf.shape(image_net["pool3"]))
-        fuse_2 = tf.add(conv_t2, image_net["pool3"], name="fuse_2")
+        fuse_2 = tf.add(conv_t2, image_net["pool3"], name="fuse_2") # 将pool3 和 conv_t2 拼接
+        print("pool3 and deconv_fuse1 ==> fuse2:", np.shape(fuse_2)) #(?, 28, 28, 256)
 
+        # t3 反卷积，原图size
         shape = tf.shape(image)
         deconv_shape3 = tf.stack([shape[0], shape[1], shape[2], NUM_OF_CLASSESS])
         W_t3 = utils.weight_variable([16, 16, NUM_OF_CLASSESS, deconv_shape2[3].value], name="W_t3")
         b_t3 = utils.bias_variable([NUM_OF_CLASSESS], name="b_t3")
         conv_t3 = utils.conv2d_transpose_strided(fuse_2, W_t3, b_t3, output_shape=deconv_shape3, stride=8)
 
-        annotation_pred = tf.argmax(conv_t3, dimension=3, name="prediction")
+        annotation_pred = tf.argmax(conv_t3, dimension=3, name="prediction") # (224,224,1) 每个像素点所有通道取最大值
 
     return tf.expand_dims(annotation_pred, dim=3), conv_t3
 
@@ -145,6 +171,7 @@ def main(argv=None):
     image = tf.placeholder(tf.float32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 3], name="input_image")
     annotation = tf.placeholder(tf.int32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 1], name="annotation")
 
+    # 定义FCN 网络
     pred_annotation, logits = inference(image, keep_probability)
     tf.summary.image("input_image", image, max_outputs=2)
     tf.summary.image("ground_truth", tf.cast(annotation, tf.uint8), max_outputs=2)
@@ -154,6 +181,7 @@ def main(argv=None):
                                                                           name="entropy")))
     loss_summary = tf.summary.scalar("entropy", loss)
 
+    # 训练
     trainable_var = tf.trainable_variables()
     if FLAGS.debug:
         for var in trainable_var:
@@ -163,10 +191,11 @@ def main(argv=None):
     print("Setting up summary op...")
     summary_op = tf.summary.merge_all()
 
+    # 加载数据
     print("Setting up image reader...")
     train_records, valid_records = scene_parsing.read_dataset(FLAGS.data_dir)
-    print(len(train_records))
-    print(len(valid_records))
+    print("train data size: ", len(train_records))
+    print("test  data size: ", len(valid_records))
 
     print("Setting up dataset reader")
     image_options = {'resize': True, 'resize_size': IMAGE_SIZE}
@@ -224,6 +253,25 @@ def main(argv=None):
             utils.save_image(valid_annotations[itr].astype(np.uint8), FLAGS.logs_dir, name="gt_" + str(5+itr))
             utils.save_image(pred[itr].astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5+itr))
             print("Saved image: %d" % itr)
+
+    else:  # 测试模式
+        since = time.time()  # 时间模块
+
+        test_image = misc.imread('G:\\yuantu8.jpg')
+        resize_image = misc.imresize(test_image, [224, 224], interp='nearest')
+        a = np.expand_dims(resize_image, axis=0)
+        a = np.array(a)
+
+        pred = sess.run(pred_annotation, feed_dict={image: a, keep_probability: 1.0})  # 预测测试结果
+
+        pred = np.squeeze(pred, axis=3)  # 从数组的形状中删除单维条目，即把shape中为1的维度去掉
+        # utils.save_image(pred[0].astype(np.uint8), logs_dir, name="pred_" + str(5))
+        utils.save_image(pred[0].astype(np.uint8), 'G:/2/', name="pred_" + str(5))
+        print("Saved image: succeed")
+
+        time_elapsed = time.time() - since
+        print('Training complete in {:.0f}m {:.0f}s'.format(
+            time_elapsed // 60, time_elapsed % 60))  # 打印出来时间
 
 
 if __name__ == "__main__":
