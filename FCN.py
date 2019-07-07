@@ -4,9 +4,9 @@ import tensorflow as tf
 import numpy as np
 
 import TensorflowUtils as utils
-import read_MITSceneParsingData as scene_parsing
+import AutoPaint_SceneParsingData as autopaint_scene_parsing
 import datetime
-import BatchDatsetReader as dataset
+import AutoPaintDatasetReader as autopaint_dataset
 from six.moves import xrange
 import scipy.misc as misc
 import time;
@@ -14,7 +14,7 @@ import time;
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("batch_size", "2", "batch size for training")
 tf.flags.DEFINE_string("logs_dir", "logs/", "path to logs directory")
-tf.flags.DEFINE_string("data_dir", "Data_zoo/MIT_SceneParsing/", "path to dataset")
+tf.flags.DEFINE_string("data_dir", "./autopaint_data_process/", "path to dataset")
 tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer")
 tf.flags.DEFINE_string("model_dir", "Model_zoo/", "Path to vgg model mat")
 tf.flags.DEFINE_bool('debug', "True", "Debug mode: True/ False")
@@ -23,8 +23,8 @@ tf.flags.DEFINE_string('mode', "train", "Mode train/ test/ visualize")
 MODEL_URL = 'http://www.vlfeat.org/matconvnet/models/beta16/imagenet-vgg-verydeep-19.mat'
 
 MAX_ITERATION = int(1e5 + 1)
-NUM_OF_CLASSESS = 151
-IMAGE_SIZE = 224
+NUM_OF_CLASSESS = 2
+IMAGE_SIZE = 512
 
 
 def vgg_net(weights, image):
@@ -193,15 +193,15 @@ def main(argv=None):
 
     # 加载数据
     print("Setting up image reader...")
-    train_records, valid_records = scene_parsing.read_dataset(FLAGS.data_dir)
-    print("train data size: ", len(train_records))
-    print("test  data size: ", len(valid_records))
+    train_img_list, train_lbl_list, valid_img_list, valid_lbl_list = autopaint_scene_parsing.read_autopaint_dataset(FLAGS.data_dir)
+    print("train data size: ", len(train_img_list))
+    print("test  data size: ", len(valid_img_list))
 
     print("Setting up dataset reader")
-    image_options = {'resize': True, 'resize_size': IMAGE_SIZE}
+    image_options = {'resize': False, 'resize_size': IMAGE_SIZE, 'dataset_path_pre':FLAGS.data_dir}
     if FLAGS.mode == 'train':
-        train_dataset_reader = dataset.BatchDatset(train_records, image_options)
-    validation_dataset_reader = dataset.BatchDatset(valid_records, image_options)
+        train_dataset_reader = autopaint_dataset.AutoPaintBatchDataset(train_img_list, train_lbl_list, image_options)
+    validation_dataset_reader = autopaint_dataset.AutoPaintBatchDataset(valid_img_list, valid_lbl_list, image_options)
 
     sess = tf.Session()
 
