@@ -1,0 +1,28 @@
+一. 环境使用
+1. python opencv 环境
+1.1 环境使用
+进入环境 source /home/dehong.gdh/py2_env_gdh/bin/activate
+退出环境 deactivate
+进入环境后，可以使用pip 安装新的python库
+目前opencv 等库都安装在这个里面
+
+2. docker 环境
+2.1 docker 使用
+a. 创建docker(可以直接运行)
+docker run --runtime=nvidia -it -v /home/dehong.gdh/workspace:/home/dehong.gdh/workspace/ -p 8888:8888 -p 6006:6006 --name dehong_gpu_tf tensorflow/tensorflow:latest-gpu /bin/bash
+b. 运行docker
+docker exec -it dehong_gpu_tf /bin/bash
+2.2 在dehong_gpu_tf 中安装tensorflow_gpu版本
+
+二. 代码
+代码路径: 进入docker后，直接 cd /home/dehong.gdh/workspace/ 这个目录就是代码路径
+
+2.1 数据预处理
+./autopaint_data_process/raw_autopaint_process.py 根据描稿文件生成训练样本
+
+2.2 训练样本保存在./autopaint_data_process/data/rc_train_data/路径下面
+其中./autopaint_data_process/data/train_img_file_list.txt和label_img_file_list.txt 记录了所有文件
+
+2.3 直接运行 python FCN.py 开始训练
+
+2.4 运行log保存在./logs/下面
