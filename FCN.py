@@ -12,7 +12,7 @@ import scipy.misc as misc
 import time;
 
 FLAGS = tf.flags.FLAGS
-tf.flags.DEFINE_integer("batch_size", "2", "batch size for training")
+tf.flags.DEFINE_integer("batch_size", "64", "batch size for training")
 tf.flags.DEFINE_string("logs_dir", "logs/", "path to logs directory")
 tf.flags.DEFINE_string("data_dir", "./autopaint_data_process/", "path to dataset")
 tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer")
