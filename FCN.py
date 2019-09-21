@@ -12,8 +12,9 @@ import scipy.misc as misc
 import time;
 
 FLAGS = tf.flags.FLAGS
-tf.flags.DEFINE_integer("batch_size", "64", "batch size for training")
-tf.flags.DEFINE_string("logs_dir", "logs/", "path to logs directory")
+tf.flags.DEFINE_integer("batch_size", "48", "batch size for training")
+tf.flags.DEFINE_string("logs_dir", "logs/tb_logs", "path to logs directory")
+tf.flags.DEFINE_string("fcn_model_dir", "logs/model_checkpoints/", "path to checkpoint files")
 tf.flags.DEFINE_string("data_dir", "./autopaint_data_process/", "path to dataset")
 tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer")
 tf.flags.DEFINE_string("model_dir", "Model_zoo/", "Path to vgg model mat")
@@ -87,7 +88,7 @@ def inference(image, keep_prob):
     # 将图像向量减去平均像素，进行normalization
     processed_image = utils.process_image(image, mean_pixel)
 
-    with tf.variable_scope("inference"):
+    with tf.compat.v1.variable_scope("inference"):
         image_net = vgg_net(weights, processed_image)
         conv_final_layer = image_net["conv5_3"]
 
@@ -157,7 +158,7 @@ def inference(image, keep_prob):
 
 
 def train(loss_val, var_list):
-    optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate)
+    optimizer = tf.compat.v1.train.AdamOptimizer(FLAGS.learning_rate)
     grads = optimizer.compute_gradients(loss_val, var_list=var_list)
     if FLAGS.debug:
         # print(len(var_list))
@@ -167,29 +168,29 @@ def train(loss_val, var_list):
 
 
 def main(argv=None):
-    keep_probability = tf.placeholder(tf.float32, name="keep_probabilty")
-    image = tf.placeholder(tf.float32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 3], name="input_image")
-    annotation = tf.placeholder(tf.int32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 1], name="annotation")
+    keep_probability = tf.compat.v1.placeholder(tf.float32, name="keep_probabilty")
+    image = tf.compat.v1.placeholder(tf.float32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 3], name="input_image")
+    annotation = tf.compat.v1.placeholder(tf.int32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 1], name="annotation")
 
     # 定义FCN 网络
     pred_annotation, logits = inference(image, keep_probability)
-    tf.summary.image("input_image", image, max_outputs=2)
-    tf.summary.image("ground_truth", tf.cast(annotation, tf.uint8), max_outputs=2)
-    tf.summary.image("pred_annotation", tf.cast(pred_annotation, tf.uint8), max_outputs=2)
+    tf.compat.v1.summary.image("input_image", image, max_outputs=2)
+    tf.compat.v1.summary.image("ground_truth", tf.cast(annotation, tf.uint8), max_outputs=2)
+    tf.compat.v1.summary.image("pred_annotation", tf.cast(pred_annotation, tf.uint8), max_outputs=2)
     loss = tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                                           labels=tf.squeeze(annotation, squeeze_dims=[3]),
                                                                           name="entropy")))
-    loss_summary = tf.summary.scalar("entropy", loss)
+    loss_summary = tf.compat.v1.summary.scalar("entropy", loss)
 
     # 训练
-    trainable_var = tf.trainable_variables()
+    trainable_var = tf.compat.v1.trainable_variables()
     if FLAGS.debug:
         for var in trainable_var:
             utils.add_to_regularization_and_summary(var)
     train_op = train(loss, trainable_var)
 
     print("Setting up summary op...")
-    summary_op = tf.summary.merge_all()
+    summary_op = tf.compat.v1.summary.merge_all()
 
     # 加载数据
     print("Setting up image reader...")
@@ -203,21 +204,21 @@ def main(argv=None):
         train_dataset_reader = autopaint_dataset.AutoPaintBatchDataset(train_img_list, train_lbl_list, image_options)
     validation_dataset_reader = autopaint_dataset.AutoPaintBatchDataset(valid_img_list, valid_lbl_list, image_options)
 
-    sess = tf.Session()
+    sess = tf.compat.v1.Session()
 
     print("Setting up Saver...")
-    saver = tf.train.Saver()
+    saver = tf.compat.v1.train.Saver(max_to_keep=5)
 
     # create two summary writers to show training loss and validation loss in the same graph
     # need to create two folders 'train' and 'validation' inside FLAGS.logs_dir
-    train_writer = tf.summary.FileWriter(FLAGS.logs_dir + '/train', sess.graph)
-    validation_writer = tf.summary.FileWriter(FLAGS.logs_dir + '/validation')
+    train_writer = tf.compat.v1.summary.FileWriter(FLAGS.logs_dir + '/train', sess.graph)
+    validation_writer = tf.compat.v1.summary.FileWriter(FLAGS.logs_dir + '/validation')
 
-    sess.run(tf.global_variables_initializer())
-    ckpt = tf.train.get_checkpoint_state(FLAGS.logs_dir)
+    sess.run(tf.compat.v1.global_variables_initializer())
+    ckpt = tf.train.get_checkpoint_state(FLAGS.fcn_model_dir)
     if ckpt and ckpt.model_checkpoint_path:
         saver.restore(sess, ckpt.model_checkpoint_path)
-        print("Model restored...")
+        print('Model {} restored...'.format(ckpt.model_checkpoint_path))
 
     if FLAGS.mode == "train":
         for itr in xrange(MAX_ITERATION):
@@ -230,6 +231,8 @@ def main(argv=None):
                 train_loss, summary_str = sess.run([loss, loss_summary], feed_dict=feed_dict)
                 print("Step: %d, Train_loss:%g" % (itr, train_loss))
                 train_writer.add_summary(summary_str, itr)
+                #saver.save(sess, FLAGS.fcn_model_dir + "model.ckpt", itr)
+                
 
             if itr % 500 == 0:
                 valid_images, valid_annotations = validation_dataset_reader.next_batch(FLAGS.batch_size)
@@ -239,7 +242,7 @@ def main(argv=None):
 
                 # add validation loss to TensorBoard
                 validation_writer.add_summary(summary_sva, itr)
-                saver.save(sess, FLAGS.logs_dir + "model.ckpt", itr)
+                saver.save(sess, FLAGS.fcn_model_dir + "model.ckpt", itr)
 
     elif FLAGS.mode == "visualize":
         valid_images, valid_annotations = validation_dataset_reader.get_random_batch(FLAGS.batch_size)
@@ -254,11 +257,11 @@ def main(argv=None):
             utils.save_image(pred[itr].astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5+itr))
             print("Saved image: %d" % itr)
 
-    else:  # 测试模式
+    elif FLAGS.mode == "test":  # 测试模式
         since = time.time()  # 时间模块
 
-        test_image = misc.imread('G:\\yuantu8.jpg')
-        resize_image = misc.imresize(test_image, [224, 224], interp='nearest')
+        test_image = misc.imread('./autopaint_data_process/data/raw_train_data/raw_0_train.jpg')
+        resize_image = misc.imresize(test_image, [512,512], interp='nearest')
         a = np.expand_dims(resize_image, axis=0)
         a = np.array(a)
 
@@ -266,13 +269,15 @@ def main(argv=None):
 
         pred = np.squeeze(pred, axis=3)  # 从数组的形状中删除单维条目，即把shape中为1的维度去掉
         # utils.save_image(pred[0].astype(np.uint8), logs_dir, name="pred_" + str(5))
-        utils.save_image(pred[0].astype(np.uint8), 'G:/2/', name="pred_" + str(5))
+        utils.save_image(pred[0].astype(np.uint8), './autopaint_data_process/data/rc_test_example/', name="pred_" + str(5))
         print("Saved image: succeed")
 
         time_elapsed = time.time() - since
         print('Training complete in {:.0f}m {:.0f}s'.format(
             time_elapsed // 60, time_elapsed % 60))  # 打印出来时间
+    else:
+        print('FLAGS.mode is not valid {}'.format(FLAGS.mode))
 
 
 if __name__ == "__main__":
-    tf.app.run()
+    tf.compat.v1.app.run()

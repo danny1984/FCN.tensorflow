@@ -59,17 +59,17 @@ def save_image(image, save_dir, name, mean=None):
 
 def get_variable(weights, name):
     init = tf.constant_initializer(weights, dtype=tf.float32)
-    var = tf.get_variable(name=name, initializer=init,  shape=weights.shape)
+    var = tf.compat.v1.get_variable(name=name, initializer=init,  shape=weights.shape)
     return var
 
 
 def weight_variable(shape, stddev=0.02, name=None):
     # print(shape)
-    initial = tf.truncated_normal(shape, stddev=stddev)
+    initial = tf.random.truncated_normal(shape, stddev=stddev)
     if name is None:
         return tf.Variable(initial)
     else:
-        return tf.get_variable(name, initializer=initial)
+        return tf.compat.v1.get_variable(name, initializer=initial)
 
 
 def bias_variable(shape, name=None):
@@ -77,7 +77,7 @@ def bias_variable(shape, name=None):
     if name is None:
         return tf.Variable(initial)
     else:
-        return tf.get_variable(name, initializer=initial)
+        return tf.compat.v1.get_variable(name, initializer=initial)
 
 
 def get_tensor_size(tensor):
@@ -113,11 +113,11 @@ def leaky_relu(x, alpha=0.0, name=""):
 
 
 def max_pool_2x2(x):
-    return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
+    return tf.nn.max_pool2d(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
 
 
 def avg_pool_2x2(x):
-    return tf.nn.avg_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
+    return tf.nn.avg_pool2d(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
 
 
 def local_response_norm(x):
@@ -224,16 +224,16 @@ def bottleneck_unit(x, out_chan1, out_chan2, down_stride=False, up_stride=False,
 
 def add_to_regularization_and_summary(var):
     if var is not None:
-        tf.summary.histogram(var.op.name, var)
-        tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
+        tf.compat.v1.summary.histogram(var.op.name, var)
+        tf.compat.v1.add_to_collection("reg_loss", tf.nn.l2_loss(var))
 
 
 def add_activation_summary(var):
     if var is not None:
-        tf.summary.histogram(var.op.name + "/activation", var)
-        tf.summary.scalar(var.op.name + "/sparsity", tf.nn.zero_fraction(var))
+        tf.compat.v1.summary.histogram(var.op.name + "/activation", var)
+        tf.compat.v1.summary.scalar(var.op.name + "/sparsity", tf.nn.zero_fraction(var))
 
 
 def add_gradient_summary(grad, var):
     if grad is not None:
-        tf.summary.histogram(var.op.name + "/gradient", grad)
+        tf.compat.v1.summary.histogram(var.op.name + "/gradient", grad)
