@@ -10,6 +10,7 @@ import AutoPaintDatasetReader as autopaint_dataset
 from six.moves import xrange
 import scipy.misc as misc
 import time;
+from  optimization import *
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("batch_size", "48", "batch size for training")
@@ -158,8 +159,11 @@ def inference(image, keep_prob):
 
 
 def train(loss_val, var_list):
-    optimizer = tf.compat.v1.train.AdamOptimizer(FLAGS.learning_rate)
-    grads = optimizer.compute_gradients(loss_val, var_list=var_list)
+    # optimizer = tf.compat.v1.train.AdamOptimizer(FLAGS.learning_rate)
+    # grads = optimizer.compute_gradients(loss_val, var_list=var_list)
+    # 使用optimizer 
+    optimizer = tf.contrib.opt.AdamWOptimizer(0.01, learning_rate=FLAGS.learning_rate)
+    grads = optimizer.compute_gradients(loss_val, var_list)
     if FLAGS.debug:
         # print(len(var_list))
         for grad, var in grads:

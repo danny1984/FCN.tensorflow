@@ -12,7 +12,7 @@ def read_autopaint_dataset(data_dir):
     data_pre = "./data/rc_train_data/"
     autopaint_train_file = os.path.join(data_dir, data_pre, "train_img_file_list.txt")
     autopaint_label_file = os.path.join(data_dir, data_pre, "label_img_file_list.txt")
-    
+
     with open(autopaint_train_file, 'r') as fin_train:
         image_file_list = fin_train.readlines()
         image_file_list = np.array([file[:-1] for file in image_file_list])

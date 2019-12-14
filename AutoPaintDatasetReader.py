@@ -51,7 +51,7 @@ class AutoPaintBatchDataset:
         self.img_files = img_list
         self.lbl_files = lbl_list
         self.image_options = image_options
-        self._read_images()
+        #self._read_images()
 
     def _read_images(self):
         self.__channels = True
@@ -61,6 +61,15 @@ class AutoPaintBatchDataset:
             [np.expand_dims(self._transform(os.path.join(self.image_options["dataset_path_pre"], filename)), axis=3) for filename in self.lbl_files])
         print (self.images.shape)
         print (self.annotations.shape)
+
+    def _read_images_crt_batch(self, img_files_crt_batch=None, lbl_files_crt_batch=None):
+        self.__channels = True
+        self.images_crt_batch = np.array([self._transform(os.path.join(self.image_options["dataset_path_pre"], filename)) for filename in img_files_crt_batch])
+        self.__channels = False
+        self.annotations_crt_batch = np.array(
+            [np.expand_dims(self._transform(os.path.join(self.image_options["dataset_path_pre"], filename)), axis=3) for filename in lbl_files_crt_batch])
+        print(len(self.images_crt_batch))
+        print(len(self.annotations_crt_batch))
 
     def _transform(self, filename):
         image = misc.imread(filename)
@@ -82,24 +91,52 @@ class AutoPaintBatchDataset:
     def reset_batch_offset(self, offset=0):
         self.batch_offset = offset
 
+    # def next_batch(self, batch_size):
+    #     start = self.batch_offset
+    #     self.batch_offset += batch_size
+    #     if self.batch_offset > self.images.shape[0]:
+    #         # Finished epoch
+    #         self.epochs_completed += 1
+    #         print("****************** Epochs completed: " + str(self.epochs_completed) + "******************")
+    #         # Shuffle the data
+    #         perm = np.arange(self.images.shape[0])
+    #         np.random.shuffle(perm)
+    #         self.images = self.images[perm]
+    #         self.annotations = self.annotations[perm]
+    #         # Start next epoch
+    #         start = 0
+    #         self.batch_offset = batch_size
+    #
+    #     end = self.batch_offset
+    #     return self.images[start:end], self.annotations[start:end]
+
     def next_batch(self, batch_size):
         start = self.batch_offset
         self.batch_offset += batch_size
-        if self.batch_offset > self.images.shape[0]:
+#        if self.batch_offset > self.images.shape[0]:
+        if self.batch_offset > len(self.img_files):
+
             # Finished epoch
             self.epochs_completed += 1
             print("****************** Epochs completed: " + str(self.epochs_completed) + "******************")
             # Shuffle the data
-            perm = np.arange(self.images.shape[0])
+#            perm = np.arange(self.images.shape[0])
+            perm = np.arange(len(self.img_files))
+
             np.random.shuffle(perm)
-            self.images = self.images[perm]
-            self.annotations = self.annotations[perm]
+            #self.images = self.images[perm]
+            self.img_files = self.img_files[perm]
+            #self.annotations = self.annotations[perm]
+            self.lbl_files = self.lbl_files[perm]
             # Start next epoch
             start = 0
             self.batch_offset = batch_size
 
         end = self.batch_offset
-        return self.images[start:end], self.annotations[start:end]
+
+        self._read_images_crt_batch(img_files_crt_batch=self.img_files[start:end], lbl_files_crt_batch=self.lbl_files[start:end])
+
+        return self.images_crt_batch, self.annotations_crt_batch
 
     def get_random_batch(self, batch_size):
         indexes = np.random.randint(0, self.images.shape[0], size=[batch_size]).tolist()
